@@ -11,7 +11,8 @@
     "typecheck": "turbo run typecheck",
     "db:emulator": "firebase emulators:start",
     "docker:up": "docker-compose -f docker/docker-compose.yml up --build",
-    "docker:down": "docker-compose -f docker/docker-compose.yml down"
+    "docker:down": "docker-compose -f docker/docker-compose.yml down",
+    "install-all": "npm install && npm install -w frontend -w backend/studio-service -w backend/workflow-engine -w backend/ai-agent-service -w backend/integration-service -w backend/export-service"
   },
   "devDependencies": {
     "turbo": "^2.10.9",
@@ -26,7 +27,6 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "node": "^26.7.0",
-    "zod": "^4.4.3"
+    "zod": "^3.23.0"
   }
 }
