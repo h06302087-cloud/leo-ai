@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection - users can read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Projects - owners and collaborators
+    match /projects/{projectId} {
+      allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      allow write: if request.auth != null && (resource == null || resource.data.ownerId == request.auth.uid);
+    }
+
+    // Workflows
+    match /workflows/{workflowId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Executions
+    match /executions/{executionId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+    }
+
+    // Agents
+    match /agents/{agentId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,20 @@
+export const SERVICE_PORTS = {
+  STUDIO: 3001,
+  WORKFLOW: 3002,
+  AI_AGENT: 3003,
+  INTEGRATION: 3004,
+  EXPORT: 3005,
+  PYTHON: 3006,
+} as const;
+
+export const DEFAULT_TIMEOUTS = {
+  HTTP_REQUEST: 30000,
+  PYTHON_EXECUTION: 60000,
+  AI_AGENT_RESPONSE: 120000,
+} as const;
+
+export const RATE_LIMITS = {
+  DEFAULT: 100,
+  PREMIUM: 1000,
+  ENTERPRISE: 10000,
+} as const;
