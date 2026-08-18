@@ -1,75 +1,98 @@
-import { Router } from 'express';
-import axios from 'axios';
-import crypto from 'crypto';
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 
 const router = Router();
 
-const credentials = new Map();
+// Type Definitions
+interface Integration {
+  id: string;
+  name: string;
+  provider: string;
+  config: Record<string, any>;
+  createdAt: string;
+  status: 'active' | 'inactive' | 'error';
+}
 
-const AVAILABLE_INTEGRATIONS = [
-  { name: 'Slack', icon: 'slack', description: 'Send messages and notifications to Slack channels', requiredScopes: ['chat:write', 'channels:read'] },
-  { name: 'Stripe', icon: 'stripe', description: 'Process payments and manage subscriptions', requiredScopes: ['read_write'] },
-  { name: 'SendGrid', icon: 'sendgrid', description: 'Send transactional and marketing emails', requiredScopes: ['mail.send'] },
-  { name: 'Google Sheets', icon: 'google', description: 'Read and write data to Google Sheets', requiredScopes: ['https://www.googleapis.com/auth/spreadsheets'] },
-  { name: 'Discord', icon: 'discord', description: 'Post messages via Discord webhooks', requiredScopes: ['webhook'] },
-  { name: 'Airtable', icon: 'airtable', description: 'Manage Airtable bases and records', requiredScopes: ['data.records:read', 'data.records:write'] },
-];
-
-router.get('/available', (_req, res) => {
-  res.json({ success: true, data: { integrations: AVAILABLE_INTEGRATIONS } });
+// Validation Schemas
+const integrationSchema = z.object({
+  name: z.string().min(1).max(100),
+  provider: z.enum(['slack', 'github', 'stripe', 'sendgrid', 'twilio']),
+  config: z.record(z.any()),
 });
 
-router.post('/authorize', (req, res) => {
-  const { service, redirectUri, scope } = req.body;
-  const state = crypto.randomBytes(32).toString('hex');
+// In-memory store (TODO: Replace with Firestore)
+const integrations = new Map<string, Integration>();
 
-  // In production, redirect to actual OAuth provider
-  const authUrls: Record<string, string> = {
-    slack: `https://slack.com/oauth/v2/authorize?client_id=\${process.env.SLACK_CLIENT_ID}&scope=\${scope}&redirect_uri=\${redirectUri}&state=\${state}`,
-    google: `https://accounts.google.com/o/oauth2/v2/auth?client_id=\${process.env.GOOGLE_CLIENT_ID}&scope=\${scope}&redirect_uri=\${redirectUri}&response_type=code&state=\${state}`,
-  };
-
-  res.json({
-    success: true,
-    data: { authUrl: authUrls[service] || '#', state },
-  });
-});
-
-router.post('/callback', (req, res) => {
-  const { code, state } = req.body;
-  const credentialId = `cred_${Date.now()}`;
-
-  // In production, exchange code for access token
-  credentials.set(credentialId, {
-    id: credentialId,
-    code,
-    state,
-    accessToken: `token_${crypto.randomBytes(16).toString('hex')}`,
-    expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
-  });
-
-  res.json({ success: true, data: { credentialId, expiresAt: credentials.get(credentialId).expiresAt } });
-});
-
-router.post('/webhook/test', async (req, res) => {
-  const { url, payload, headers } = req.body;
-
-  const startTime = Date.now();
+/**
+ * POST /api/integrations
+ * Create a new integration
+ */
+router.post('/', (req: Request, res: Response) => {
   try {
-    const response = await axios.post(url, payload, {
-      headers: { 'Content-Type': 'application/json', ...headers },
-      timeout: 10000,
-      validateStatus: () => true,
-    });
+    const result = integrationSchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error.flatten() });
+    }
 
-    res.json({
-      success: true,
-      data: {
-        statusCode: response.status,
-        responseTime: Date.now() - startTime,
-        body: response.data,
-      },
-    });
+    const integrationId = `int_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const integration: Integration = {
+      id: integrationId,
+      ...result.data,
+      createdAt: new Date().toISOString(),
+      status: 'active',
+    };
+
+    integrations.set(integrationId, integration);
+    res.status(201).json({ success: true, data: { integrationId, status: 'active' } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/integrations/:integrationId
+ * Retrieve integration details
+ */
+router.get('/:integrationId', (req: Request, res: Response) => {
+  try {
+    const integration = integrations.get(req.params.integrationId);
+    if (!integration) {
+      return res.status(404).json({ success: false, error: 'Integration not found' });
+    }
+    // Don't expose sensitive config in response
+    const { config, ...safeData } = integration;
+    res.json({ success: true, data: safeData });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/integrations/:integrationId/test
+ * Test if an integration is working
+ */
+router.post('/:integrationId/test', (req: Request, res: Response) => {
+  try {
+    const integration = integrations.get(req.params.integrationId);
+    if (!integration) {
+      return res.status(404).json({ success: false, error: 'Integration not found' });
+    }
+
+    // TODO: Implement actual provider health checks
+    res.json({ success: true, data: { status: 'connected', provider: integration.provider } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/integrations
+ * List all integrations
+ */
+router.get('/', (req: Request, res: Response) => {
+  try {
+    const allIntegrations = Array.from(integrations.values()).map(({ config, ...safe }) => safe);
+    res.json({ success: true, data: allIntegrations, count: allIntegrations.length });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
