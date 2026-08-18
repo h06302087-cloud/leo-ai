@@ -1,22 +1,6 @@
 version: '3.8'
 
 services:
-  # Frontend
-  frontend:
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://localhost:3000
-    depends_on:
-      - studio-service
-      - workflow-engine
-    networks:
-      - leo-ai-network
-
   # Redis (shared cache & queue)
   redis:
     image: redis:7-alpine
@@ -24,98 +8,125 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     networks:
       - leo-ai-network
 
-  # Studio Service
+  # Studio Service - No-code app builder
   studio-service:
     build:
-      context: ../backend/studio-service
+      context: ./backend/studio-service
       dockerfile: Dockerfile
     ports:
       - "3001:3001"
     environment:
       - PORT=3001
-      - NODE_ENV=production
-      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
-    volumes:
-      - ../backend/packages/shared:/app/packages/shared:ro
+      - NODE_ENV=development
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-demo-project}
+      - LOG_LEVEL=info
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - leo-ai-network
+    restart: unless-stopped
 
-  # Workflow Engine
+  # Workflow Engine - DAG execution
   workflow-engine:
     build:
-      context: ../backend/workflow-engine
+      context: ./backend/workflow-engine
       dockerfile: Dockerfile
     ports:
       - "3002:3002"
     environment:
       - PORT=3002
-      - NODE_ENV=production
+      - NODE_ENV=development
       - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=info
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - leo-ai-network
+    restart: unless-stopped
 
-  # AI Agent Service
+  # AI Agent Service - LLM orchestration
   ai-agent-service:
     build:
-      context: ../backend/ai-agent-service
+      context: ./backend/ai-agent-service
       dockerfile: Dockerfile
     ports:
       - "3003:3003"
     environment:
       - PORT=3003
-      - NODE_ENV=production
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - NODE_ENV=development
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - leo-ai-network
+    restart: unless-stopped
 
-  # Integration Service
+  # Integration Service - External API management
   integration-service:
     build:
-      context: ../backend/integration-service
+      context: ./backend/integration-service
       dockerfile: Dockerfile
     ports:
       - "3004:3004"
     environment:
       - PORT=3004
-      - NODE_ENV=production
+      - NODE_ENV=development
+      - LOG_LEVEL=info
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - leo-ai-network
+    restart: unless-stopped
 
-  # Export Service
+  # Export Service - App export/deployment
   export-service:
     build:
-      context: ../backend/export-service
+      context: ./backend/export-service
       dockerfile: Dockerfile
     ports:
       - "3005:3005"
     environment:
       - PORT=3005
-      - NODE_ENV=production
+      - NODE_ENV=development
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - leo-ai-network
-
-  # Python Service
-  python-service:
-    build:
-      context: ../python-service
-      dockerfile: Dockerfile
-    ports:
-      - "3006:3006"
-    environment:
-      - PORT=3006
-    networks:
-      - leo-ai-network
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 1G
+    restart: unless-stopped
 
 volumes:
   redis-data:
